@@ -108,6 +108,60 @@ class ApiService {
     return this.makeRequest(`/admin/accounts/${accountId}?account_type=${accountType}`);
   }
 
+  // Document Verification
+  async getAccountDocuments(
+    accountId: string, 
+    accountType: 'vendor' | 'vehicle_owner' | 'driver' | 'quickdriver'
+  ): Promise<{
+    account_id: string;
+    account_type: string;
+    account_name: string;
+    account_documents: Array<{
+      document_id: string;
+      document_type: string;
+      document_name: string;
+      image_url: string | null;
+      status: string;
+      uploaded_at: string;
+      car_id: string | null;
+      car_name: string | null;
+      car_number: string | null;
+    }>;
+    car_documents: Array<{
+      document_id: string;
+      document_type: string;
+      document_name: string;
+      image_url: string | null;
+      status: string;
+      uploaded_at: string;
+      car_id: string;
+      car_name: string;
+      car_number: string;
+    }>;
+    total_documents: number;
+    pending_count: number;
+    verified_count: number;
+    invalid_count: number;
+  }> {
+    return this.makeRequest(`/admin/accounts/${accountId}/documents?account_type=${accountType}`);
+  }
+
+  async updateDocumentStatus(
+    accountId: string,
+    documentId: string,
+    accountType: 'vendor' | 'vehicle_owner' | 'driver' | 'quickdriver',
+    status: 'PENDING' | 'VERIFIED' | 'INVALID'
+  ): Promise<{
+    message: string;
+    document_id: string;
+    document_type: string;
+    new_status: string;
+  }> {
+    return this.makeRequest(`/admin/accounts/${accountId}/documents/${documentId}/status?account_type=${accountType}&status=${status}`, {
+      method: 'PATCH',
+    });
+  }
+
   // Vendors
   async getVendors(skip = 0, limit = 100): Promise<{ vendors: any[]; total_count: number }> {
     return this.makeRequest(`/admin-vendor/vendors?skip=${skip}&limit=${limit}`);

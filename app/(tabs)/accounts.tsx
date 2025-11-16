@@ -9,7 +9,8 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, User, Building2, Car, UserCircle, Filter } from 'lucide-react-native';
+import { Search, User, Building2, Car, UserCircle, Filter, FileText } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import { apiService } from '@/services/api';
 import StatusBadge from '@/components/StatusBadge';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -27,6 +28,7 @@ type AccountTypeFilter = 'all' | 'vendor' | 'vehicle_owner' | 'driver' | 'quickd
 type StatusFilter = 'all' | 'active' | 'inactive' | 'pending';
 
 export default function AccountsScreen() {
+  const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,7 +49,18 @@ export default function AccountsScreen() {
       const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
       
       const data = await apiService.getAllAccounts(0, 100, accountTypeParam, statusParam);
-      setAccounts(data.accounts);
+      
+      // Sort accounts: inactive/pending first, then active
+      const sortedAccounts = [...data.accounts].sort((a, b) => {
+        const aInactive = a.account_status === 'INACTIVE' || a.account_status === 'PENDING' || a.account_status === 'OFFLINE' || a.account_status === 'PROCESSING';
+        const bInactive = b.account_status === 'INACTIVE' || b.account_status === 'PENDING' || b.account_status === 'OFFLINE' || b.account_status === 'PROCESSING';
+        
+        if (aInactive && !bInactive) return -1;
+        if (!aInactive && bInactive) return 1;
+        return 0;
+      });
+      
+      setAccounts(sortedAccounts);
       setTotalCount(data.total_count);
       setActiveCount(data.active_count);
       setInactiveCount(data.inactive_count);
@@ -144,29 +157,55 @@ export default function AccountsScreen() {
     }
   };
 
-  const renderAccountItem = ({ item }: { item: Account }) => (
-    <TouchableOpacity
-      style={styles.accountCard}
-      onLongPress={() => {
-        setSelectedAccount(item);
-        setShowStatusSheet(true);
-      }}
-    >
-      <View style={styles.accountHeader}>
-        <View style={styles.accountInfo}>
-          <View style={styles.accountTypeRow}>
-            {getAccountTypeIcon(item.account_type)}
-            <Text style={styles.accountTypeLabel}>
-              {getAccountTypeLabel(item.account_type)}
-            </Text>
+  const handleAccountPress = (account: Account) => {
+    router.push({
+      pathname: '/account-documents',
+      params: {
+        accountId: account.id,
+        accountType: account.account_type,
+        accountName: account.name,
+      },
+    });
+  };
+
+  const renderAccountItem = ({ item }: { item: Account }) => {
+    const isInactive = item.account_status === 'INACTIVE' || item.account_status === 'PENDING' || 
+                       item.account_status === 'OFFLINE' || item.account_status === 'PROCESSING';
+    
+    return (
+      <TouchableOpacity
+        style={[
+          styles.accountCard,
+          isInactive && styles.accountCardInactive,
+        ]}
+        onPress={() => handleAccountPress(item)}
+        onLongPress={() => {
+          setSelectedAccount(item);
+          setShowStatusSheet(true);
+        }}
+      >
+        <View style={styles.accountHeader}>
+          <View style={styles.accountInfo}>
+            <View style={styles.accountTypeRow}>
+              {getAccountTypeIcon(item.account_type)}
+              <Text style={styles.accountTypeLabel}>
+                {getAccountTypeLabel(item.account_type)}
+              </Text>
+            </View>
+            <Text style={styles.accountName}>{item.name}</Text>
+            <Text style={styles.accountId}>ID: {item.id}</Text>
           </View>
-          <Text style={styles.accountName}>{item.name}</Text>
-          <Text style={styles.accountId}>ID: {item.id}</Text>
+          <View style={styles.accountActions}>
+            <StatusBadge status={item.account_status} />
+            <View style={styles.verifyButton}>
+              <FileText size={16} color="#3B82F6" />
+              <Text style={styles.verifyButtonText}>Verify</Text>
+            </View>
+          </View>
         </View>
-        <StatusBadge status={item.account_status} />
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   const accountTypeOptions = [
     { label: 'All Types', value: 'all' },
@@ -433,10 +472,34 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
+  accountCardInactive: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    backgroundColor: '#FFFBEB',
+  },
   accountHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  accountActions: {
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  verifyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  verifyButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#3B82F6',
   },
   accountInfo: {
     flex: 1,
