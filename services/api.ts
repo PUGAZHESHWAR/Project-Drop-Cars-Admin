@@ -214,18 +214,12 @@ class ApiService {
       });
     }
     
-    // Map vehicle_owner to driver for the API endpoint (backend uses 'driver' for vehicle_owner)
-    const apiAccountType = accountType === 'vehicle_owner' ? 'driver' : accountType;
+    // Use account_type as-is - vehicle_owner should stay as vehicle_owner, not mapped to driver
+    // The backend expects the exact account_type: vendor, vehicle_owner, driver, quickdriver
     
-    // For drivers and quickdrivers, backend might expect account_status but maps it to driver_status internally
-    // Try account_status first, as the unified endpoint might handle the mapping
-    const bodyField = (accountType === 'driver' || accountType === 'quickdriver') 
-      ? { account_status: status }  // Try account_status first
-      : { account_status: status };
-    
-    return this.makeRequest(`/admin/accounts/${accountIdStr}/status?account_type=${apiAccountType}`, {
+    return this.makeRequest(`/admin/accounts/${accountIdStr}/status?account_type=${accountType}`, {
       method: 'PATCH',
-      body: JSON.stringify(bodyField),
+      body: JSON.stringify({ account_status: status }),
     });
   }
 
