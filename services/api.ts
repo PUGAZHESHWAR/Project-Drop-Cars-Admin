@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'http://172.20.10.7:8000/api';
+const BASE_URL = 'http://10.59.192.145:8000/api';
+// const BASE_URL = 'https://drop-cars-api-1049299844333.asia-south2.run.app/api';
 
 class ApiService {
   private async getAuthToken(): Promise<string | null> {
@@ -20,7 +21,7 @@ class ApiService {
     return headers;
   }
 
-  private async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  private async makeRequest<T>(endpoint: string, options: RequestInit = {}, skipLogoutOnError = false): Promise<T> {
     const url = `${BASE_URL}${endpoint}`;
     const headers = await this.getAuthHeaders();
     
@@ -36,24 +37,66 @@ class ApiService {
       const response = await fetch(url, config);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          // Handle different error response formats
+          if (typeof errorJson === 'string') {
+            errorMessage = errorJson;
+          } else if (errorJson.message) {
+            errorMessage = errorJson.message;
+          } else if (errorJson.detail) {
+            errorMessage = Array.isArray(errorJson.detail) 
+              ? errorJson.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+              : errorJson.detail;
+          } else if (errorJson.error) {
+            errorMessage = errorJson.error;
+          } else {
+            errorMessage = JSON.stringify(errorJson);
+          }
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        
+        // Log the full error for debugging
+        console.error(`API Error [${response.status}]:`, {
+          url,
+          status: response.status,
+          error: errorMessage,
+          errorText,
+        });
+        
+        throw new Error(errorMessage);
       }
       
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error('API request failed Force Logout:', error);
-      this.logout()
+      console.error('API request failed:', error);
+      // Only logout on authentication errors (401, 403), not on other errors like 422, 404, etc.
+      // Don't logout on skipLogoutOnError flag (used for login)
+      if (!skipLogoutOnError && error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        // Check for authentication-related errors
+        if (errorMessage.includes('not authenticated') || 
+            errorMessage.includes('unauthorized') || 
+            errorMessage.includes('401') ||
+            errorMessage.includes('403') ||
+            errorMessage.includes('token')) {
+          this.logout();
+        }
+      }
       throw error;
     }
   }
 
   // Auth
-  async login(credentials: { username: string; password: string }): Promise<{ access_token: string }> {
-    const response = await this.makeRequest<{ access_token: string }>('/admin/signin', {
+  async login(credentials: { username: string; password: string }): Promise<{ access_token: string; token_type: string; admin: any }> {
+    const response = await this.makeRequest<{ access_token: string; token_type: string; admin: any }>('/admin/signin', {
       method: 'POST',
       body: JSON.stringify(credentials),
-    });
+    }, true); // Skip logout on login errors
     
     if (response.access_token) {
       await AsyncStorage.setItem('auth_token', response.access_token);
@@ -64,6 +107,120 @@ class ApiService {
 
   async logout(): Promise<void> {
     await AsyncStorage.removeItem('auth_token');
+  }
+
+  // Unified Accounts
+  async getAllAccounts(
+    skip = 0, 
+    limit = 100, 
+    accountType?: 'vendor' | 'vehicle_owner' | 'driver' | 'quickdriver' | 'car',
+    statusFilter?: 'active' | 'inactive' | 'pending' | string
+  ): Promise<{
+    accounts: Array<{
+      id: string;
+      name: string;
+      account_type: string;
+      account_status: string;
+    }>;
+    total_count: number;
+    active_count: number;
+    inactive_count: number;
+  }> {
+    let queryParams = `skip=${skip}&limit=${limit}`;
+    if (accountType) {
+      queryParams += `&account_type=${accountType}`;
+    }
+    if (statusFilter) {
+      queryParams += `&status_filter=${statusFilter}`;
+    }
+    return this.makeRequest(`/admin/accounts?${queryParams}`);
+  }
+
+  async getAccountDetails(accountId: string, accountType: 'vendor' | 'vehicle_owner' | 'driver' | 'quickdriver'): Promise<any> {
+    return this.makeRequest(`/admin/accounts/${accountId}?account_type=${accountType}`);
+  }
+
+  // Document Verification
+  async getAccountDocuments(
+    accountId: string, 
+    accountType: 'vendor' | 'vehicle_owner' | 'driver' | 'quickdriver'
+  ): Promise<{
+    account_id: string;
+    account_type: string;
+    account_name: string;
+    account_documents: Array<{
+      document_id: string;
+      document_type: string;
+      document_name: string;
+      image_url: string | null;
+      status: string;
+      uploaded_at: string;
+      car_id: string | null;
+      car_name: string | null;
+      car_number: string | null;
+    }>;
+    car_documents: Array<{
+      document_id: string;
+      document_type: string;
+      document_name: string;
+      image_url: string | null;
+      status: string;
+      uploaded_at: string;
+      car_id: string;
+      car_name: string;
+      car_number: string;
+    }>;
+    total_documents: number;
+    pending_count: number;
+    verified_count: number;
+    invalid_count: number;
+  }> {
+    return this.makeRequest(`/admin/accounts/${accountId}/documents?account_type=${accountType}`);
+  }
+
+  async updateDocumentStatus(
+    accountId: string,
+    documentId: string,
+    accountType: 'vendor' | 'vehicle_owner' | 'driver' | 'quickdriver',
+    status: 'PENDING' | 'VERIFIED' | 'INVALID'
+  ): Promise<{
+    message: string;
+    document_id: string;
+    document_type: string;
+    new_status: string;
+  }> {
+    return this.makeRequest(`/admin/accounts/${accountId}/documents/${documentId}/status?account_type=${accountType}&status=${status}`, {
+      method: 'PATCH',
+    });
+  }
+
+  // Unified Account Status Update
+  async updateAccountStatus(
+    accountId: string,
+    accountType: 'vendor' | 'vehicle_owner' | 'driver' | 'quickdriver' | 'car',
+    status: string
+  ): Promise<{
+    message: string;
+    id: string;
+    new_status: string;
+  }> {
+    // Ensure accountId is a string
+    const accountIdStr = String(accountId);
+    
+    if (accountType === 'car') {
+      return this.makeRequest(`/admin/cars/${accountIdStr}/account-status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ account_status: status }),
+      });
+    }
+    
+    // Use account_type as-is - vehicle_owner should stay as vehicle_owner, not mapped to driver
+    // The backend expects the exact account_type: vendor, vehicle_owner, driver, quickdriver
+    
+    return this.makeRequest(`/admin/accounts/${accountIdStr}/status?account_type=${accountType}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ account_status: status }),
+    });
   }
 
   // Vendors
@@ -113,6 +270,43 @@ class ApiService {
   }
 
   // Cars
+  async getCars(
+    skip = 0,
+    limit = 100,
+    statusFilter?: 'ONLINE' | 'DRIVING' | 'BLOCKED' | 'PROCESSING' | string,
+    carTypeFilter?: string,
+    vehicleOwnerId?: string
+  ): Promise<{
+    cars: Array<{
+      id: string;
+      vehicle_owner_id: string;
+      car_name: string;
+      car_type: string;
+      car_number: string;
+      year_of_the_car: string;
+      car_status: string;
+      vehicle_owner_name: string;
+      created_at: string;
+    }>;
+    total_count: number;
+    online_count: number;
+    blocked_count: number;
+    processing_count: number;
+    driving_count: number;
+  }> {
+    let queryParams = `skip=${skip}&limit=${limit}`;
+    if (statusFilter) {
+      queryParams += `&status_filter=${statusFilter}`;
+    }
+    if (carTypeFilter) {
+      queryParams += `&car_type_filter=${carTypeFilter}`;
+    }
+    if (vehicleOwnerId) {
+      queryParams += `&vehicle_owner_id=${vehicleOwnerId}`;
+    }
+    return this.makeRequest(`/admin/cars?${queryParams}`);
+  }
+
   async updateCarAccountStatus(carId: string, status: string): Promise<any> {
     return this.makeRequest(`/admin/cars/${carId}/account-status`, {
       method: 'PATCH',
@@ -140,6 +334,16 @@ class ApiService {
       method: 'PATCH',
       body: JSON.stringify({ document_status: status }),
     });
+  }
+
+  // Orders
+  async getOrders(skip = 0, limit = 100): Promise<{
+    orders: any[];
+    total_count: number;
+    skip: number;
+    limit: number;
+  }> {
+    return this.makeRequest(`/admin/orders?skip=${skip}&limit=${limit}`);
   }
 
   // Transfers
