@@ -28,6 +28,13 @@ interface Account {
   primary_number?: string; // Mobile number
 }
 
+const formatCurrency = (value?: number | null) => {
+  if (value === null || value === undefined || isNaN(Number(value))) {
+    return 'N/A';
+  }
+  return `₹${Number(value).toFixed(2)}`;
+};
+
 export default function AccountsScreen() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -498,14 +505,14 @@ export default function AccountsScreen() {
                 {account.wallet_balance !== undefined && (
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Wallet Balance:</Text>
-                    <Text style={styles.detailValue}>₹{account.wallet_balance.toFixed(2)}</Text>
+                    <Text style={styles.detailValue}>{formatCurrency(account.wallet_balance)}</Text>
                   </View>
                 )}
 
                 {account.bank_balance !== undefined && (
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Bank Balance:</Text>
-                    <Text style={styles.detailValue}>₹{account.bank_balance.toFixed(2)}</Text>
+                    <Text style={styles.detailValue}>{formatCurrency(account.bank_balance)}</Text>
                   </View>
                 )}
 
