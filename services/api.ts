@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'http://10.59.192.145:8000/api';
+const BASE_URL = 'http://172.20.10.7:8000/api';
 // const BASE_URL = 'https://drop-cars-api-1049299844333.asia-south2.run.app/api';
 
 class ApiService {

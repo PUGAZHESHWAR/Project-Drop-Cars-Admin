@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Clock, CircleCheck as CheckCircle, Circle as XCircle, IndianRupee } from 'lucide-react-native';
+import { Clock, CircleCheck as CheckCircle, Circle as XCircle, IndianRupee, RefreshCw } from 'lucide-react-native';
 import { apiService } from '@/services/api';
 import StatusBadge from '@/components/StatusBadge';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -51,6 +51,11 @@ export default function TransfersScreen() {
   }, []);
 
   const onRefresh = () => {
+    setRefreshing(true);
+    fetchTransfers();
+  };
+
+  const handleManualRefresh = () => {
     setRefreshing(true);
     fetchTransfers();
   };
@@ -155,8 +160,23 @@ export default function TransfersScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Transfer Requests</Text>
-        <Text style={styles.subtitle}>{transfers.length} pending requests</Text>
+        <View style={styles.headerContent}>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Transfer Requests</Text>
+            <Text style={styles.subtitle}>{transfers.length} pending requests</Text>
+          </View>
+          <TouchableOpacity 
+            style={[styles.refreshButton, refreshing && styles.refreshButtonDisabled]}
+            onPress={handleManualRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw 
+              size={20} 
+              color={refreshing ? "#9CA3AF" : "#3B82F6"} 
+              style={refreshing && styles.refreshIconSpinning}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {transfers.length === 0 ? (
@@ -164,6 +184,20 @@ export default function TransfersScreen() {
           <Clock size={48} color="#6B7280" />
           <Text style={styles.emptyTitle}>No Pending Transfers</Text>
           <Text style={styles.emptySubtitle}>All transfer requests have been processed</Text>
+          <TouchableOpacity 
+            style={styles.refreshEmptyButton}
+            onPress={handleManualRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw 
+              size={16} 
+              color={refreshing ? "#9CA3AF" : "#3B82F6"} 
+              style={refreshing && styles.refreshIconSpinning}
+            />
+            <Text style={styles.refreshEmptyButtonText}>
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -193,6 +227,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerText: {
+    flex: 1,
+  },
   title: {
     fontSize: 28,
     fontWeight: '700',
@@ -202,6 +244,19 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6B7280',
+  },
+  refreshButton: {
+    padding: 12,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refreshButtonDisabled: {
+    backgroundColor: '#F9FAFB',
+  },
+  refreshIconSpinning: {
+    transform: [{ rotate: '360deg' }],
   },
   listContainer: {
     paddingHorizontal: 20,
@@ -330,5 +385,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
     textAlign: 'center',
+    marginBottom: 24,
+  },
+  refreshEmptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#3B82F6',
+    borderRadius: 8,
+  },
+  refreshEmptyButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
