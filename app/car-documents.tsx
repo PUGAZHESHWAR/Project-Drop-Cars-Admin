@@ -238,8 +238,40 @@ export default function CarDocumentsScreen() {
     );
   };
 
-  const handleSetPending = () => {
-    updateDocumentStatus(currentDocument.document_id, 'PENDING');
+  const docsToVerify = carDocuments.filter((d) => d.status !== 'VERIFIED');
+  const canVerifyAll = docsToVerify.length > 0;
+
+  const handleVerifyAll = () => {
+    Alert.alert(
+      'Verify All Documents',
+      `Are you sure you want to verify all ${docsToVerify.length} document(s) for this car?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Verify All',
+          onPress: async () => {
+            setUpdating(true);
+            try {
+              for (const doc of docsToVerify) {
+                await apiService.updateDocumentStatus(
+                  vehicleOwnerId,
+                  doc.document_id,
+                  'vehicle_owner',
+                  'VERIFIED'
+                );
+              }
+              await fetchDocuments();
+              Alert.alert('Success', `All ${docsToVerify.length} document(s) verified successfully.`);
+            } catch (err: any) {
+              console.error('Failed to verify all documents:', err);
+              Alert.alert('Error', err?.message || 'Failed to verify some documents.');
+            } finally {
+              setUpdating(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -366,14 +398,14 @@ export default function CarDocumentsScreen() {
           <TouchableOpacity
             style={[
               styles.actionButton,
-              styles.pendingButton,
-              (updating || currentDocument.status === 'PENDING') && styles.actionButtonDisabled,
+              styles.verifyAllButton,
+              (updating || !canVerifyAll) && styles.actionButtonDisabled,
             ]}
-            onPress={handleSetPending}
-            disabled={updating || currentDocument.status === 'PENDING'}
+            onPress={handleVerifyAll}
+            disabled={updating || !canVerifyAll}
           >
-            <Clock size={20} color="white" />
-            <Text style={styles.actionButtonText}>Set Pending</Text>
+            <CheckCircle size={20} color="white" />
+            <Text style={styles.actionButtonText}>Verify All</Text>
           </TouchableOpacity>
         </View>
 
@@ -613,8 +645,8 @@ const styles = StyleSheet.create({
   rejectButton: {
     backgroundColor: '#EF4444',
   },
-  pendingButton: {
-    backgroundColor: '#F59E0B',
+  verifyAllButton: {
+    backgroundColor: '#3B82F6',
   },
   actionButtonDisabled: {
     opacity: 0.5,
