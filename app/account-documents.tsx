@@ -9,10 +9,12 @@ import {
   Alert,
   RefreshControl,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, CheckCircle, XCircle, Clock, ChevronLeft, ChevronRight, FileText } from 'lucide-react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { ArrowLeft, CheckCircle, XCircle, Clock, ChevronLeft, ChevronRight, FileText, ExternalLink } from 'lucide-react-native';
 import { apiService } from '@/services/api';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import ErrorMessage from '@/components/ErrorMessage';
@@ -57,6 +59,19 @@ export default function AccountDocumentsScreen() {
   const [updating, setUpdating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const openInBrowser = async () => {
+    const url = currentDocument?.image_url;
+    if (!url) return;
+    try {
+      await WebBrowser.openBrowserAsync(url, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      });
+    } catch (err) {
+      console.error('Failed to open URL:', err);
+      Alert.alert('Error', 'Could not open document in browser.');
+    }
+  };
 
   useEffect(() => {
     if (params.accountId && params.accountType) {
@@ -283,14 +298,33 @@ export default function AccountDocumentsScreen() {
           </View>
         </View>
 
-        {/* Document Image */}
+        {/* Document Image - pinch to zoom (iOS native ScrollView; Android shows image) */}
         <View style={styles.imageContainer}>
           {currentDocument.image_url ? (
-            <Image
-              source={{ uri: currentDocument.image_url }}
-              style={styles.documentImage}
-              resizeMode="contain"
-            />
+            Platform.OS === 'ios' ? (
+              <ScrollView
+                style={styles.zoomScrollView}
+                contentContainerStyle={styles.zoomScrollContent}
+                maximumZoomScale={4}
+                minimumZoomScale={0.5}
+                showsHorizontalScrollIndicator={false}
+                showsVerticalScrollIndicator={false}
+              >
+                <Image
+                  source={{ uri: currentDocument.image_url }}
+                  style={styles.documentImage}
+                  resizeMode="contain"
+                />
+              </ScrollView>
+            ) : (
+              <View style={styles.imageWrapper}>
+                <Image
+                  source={{ uri: currentDocument.image_url }}
+                  style={styles.documentImage}
+                  resizeMode="contain"
+                />
+              </View>
+            )
           ) : (
             <View style={styles.noImageContainer}>
               <FileText size={48} color="#9CA3AF" />
@@ -298,6 +332,14 @@ export default function AccountDocumentsScreen() {
             </View>
           )}
         </View>
+
+        {/* View in browser link */}
+        {currentDocument.image_url && (
+          <TouchableOpacity style={styles.viewInBrowserLink} onPress={openInBrowser} activeOpacity={0.7}>
+            <ExternalLink size={20} color="#3B82F6" />
+            <Text style={styles.viewInBrowserText}>View document in browser</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Action Buttons */}
         <View style={styles.actionsContainer}>
@@ -522,7 +564,7 @@ const styles = StyleSheet.create({
   imageContainer: {
     backgroundColor: 'white',
     marginHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 12,
     borderRadius: 16,
     padding: 20,
     alignItems: 'center',
@@ -534,10 +576,43 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
+  imageWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomScrollView: {
+    width: SCREEN_WIDTH - 80,
+    height: 400,
+    alignSelf: 'center',
+  },
+  zoomScrollContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: SCREEN_WIDTH - 80,
+    minHeight: 400,
+  },
   documentImage: {
     width: SCREEN_WIDTH - 80,
     height: 400,
     borderRadius: 8,
+  },
+  viewInBrowserLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  viewInBrowserText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3B82F6',
   },
   noImageContainer: {
     alignItems: 'center',
