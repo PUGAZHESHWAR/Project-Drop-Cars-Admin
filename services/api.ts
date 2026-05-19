@@ -136,7 +136,7 @@ class ApiService {
     active_count: number;
     inactive_count: number;
   }> {
-    let queryParams = `skip=${skip}&limit=${limit}`;
+    let queryParams = `skip=0&limit=5000`;
     if (accountType) {
       queryParams += `&account_type=${accountType}`;
     }
