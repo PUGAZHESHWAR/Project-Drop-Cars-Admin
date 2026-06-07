@@ -11,6 +11,7 @@ import {
   Alert,
   Modal,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -33,21 +34,40 @@ interface CarItem {
 
 type StatusFilter = 'all' | 'ONLINE' | 'DRIVING' | 'BLOCKED' | 'PROCESSING';
 
-const CAR_TYPES = [
-  'HATCHBACK',
-  'SEDAN_4_PLUS_1',
-  'NEW_SEDAN_2022_MODEL',
-  'ETIOS_4_PLUS_1',
-  'SUV',
-  'SUV_6_PLUS_1',
-  'SUV_7_PLUS_1',
-  'INNOVA',
-  'INNOVA_6_PLUS_1',
-  'INNOVA_7_PLUS_1',
-  'INNOVA_CRYSTA',
-  'INNOVA_CRYSTA_6_PLUS_1',
-  'INNOVA_CRYSTA_7_PLUS_1',
+const STATUS_TABS: { label: string; value: StatusFilter; color: string }[] = [
+  { label: 'All', value: 'all', color: '#6B7280' },
+  { label: 'Online', value: 'ONLINE', color: '#10B981' },
+  { label: 'Driving', value: 'DRIVING', color: '#3B82F6' },
+  { label: 'Blocked', value: 'BLOCKED', color: '#EF4444' },
+  { label: 'Processing', value: 'PROCESSING', color: '#F59E0B' },
 ];
+
+const extractDigits = (value: string): string => value.replace(/\D/g, '');
+
+const matchesCarSearch = (car: CarItem, query: string): boolean => {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const queryDigits = extractDigits(query);
+
+  const textMatches =
+    car.car_name.toLowerCase().includes(normalizedQuery) ||
+    car.car_number.toLowerCase().includes(normalizedQuery) ||
+    car.vehicle_owner_name.toLowerCase().includes(normalizedQuery);
+
+  if (textMatches) return true;
+
+  if (queryDigits.length > 0) {
+    const carNumberDigits = extractDigits(car.car_number);
+    if (carNumberDigits.includes(queryDigits)) return true;
+    if (carNumberDigits.endsWith(queryDigits)) return true;
+    if (queryDigits.length >= 4 && carNumberDigits.slice(-4) === queryDigits.slice(-4)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 export default function CarsScreen() {
   const router = useRouter();
@@ -58,7 +78,7 @@ export default function CarsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [carTypeFilter, setCarTypeFilter] = useState<string>('all');
+  const [filterLoading, setFilterLoading] = useState(false);
   const [vehicleOwnerIdFilter, setVehicleOwnerIdFilter] = useState<string>('');
   const [totalCount, setTotalCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -68,14 +88,16 @@ export default function CarsScreen() {
   const [selectedCar, setSelectedCar] = useState<CarItem | null>(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
 
-  const fetchCars = async () => {
+  const fetchCars = async (isFilterChange = false) => {
     try {
       setError(null);
+      if (isFilterChange) {
+        setFilterLoading(true);
+      }
       const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
-      const carTypeParam = carTypeFilter !== 'all' ? carTypeFilter : undefined;
       const vehicleOwnerParam = vehicleOwnerIdFilter.trim() || undefined;
       
-      const data = await apiService.getCars(0, 100, statusParam, carTypeParam, vehicleOwnerParam);
+      const data = await apiService.getCars(0, 100, statusParam, undefined, vehicleOwnerParam);
       
       // Sort cars: blocked/processing first, then online/driving
       const sortedCars = [...data.cars].sort((a, b) => {
@@ -99,12 +121,20 @@ export default function CarsScreen() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setFilterLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchCars();
-  }, [statusFilter, carTypeFilter, vehicleOwnerIdFilter]);
+    const isInitialLoad = loading && cars.length === 0;
+    fetchCars(!isInitialLoad);
+  }, [statusFilter, vehicleOwnerIdFilter]);
+
+  const handleStatusFilterChange = (value: StatusFilter) => {
+    if (value === statusFilter || filterLoading) return;
+    setFilterLoading(true);
+    setStatusFilter(value);
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -162,21 +192,7 @@ export default function CarsScreen() {
     }
   };
 
-  const filteredCars = cars.filter(car => {
-    const matchesSearch = 
-      car.car_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      car.car_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      car.vehicle_owner_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      car.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      car.vehicle_owner_id.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // If search query looks like an ID, also check vehicle_owner_id
-    if (searchQuery.trim().length > 0 && searchQuery.includes('-')) {
-      return matchesSearch || car.vehicle_owner_id.toLowerCase().includes(searchQuery.toLowerCase());
-    }
-    
-    return matchesSearch;
-  });
+  const filteredCars = cars.filter(car => matchesCarSearch(car, searchQuery));
 
   const getStatusLabel = (status: string): string => {
     switch (status) {
@@ -315,7 +331,7 @@ export default function CarsScreen() {
         <Search size={18} color="#6B7280" />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by car name, number, or owner..."
+          placeholder="Search by car name, number, owner name, or last 4 digits..."
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholderTextColor="#9CA3AF"
@@ -332,75 +348,39 @@ export default function CarsScreen() {
         </View>
       )}
 
-      {/* Status Filters */}
-      <View style={styles.filterButtons}>
-        <FlatList
-          horizontal
-          data={[
-            { label: 'All Statuses', value: 'all' },
-            { label: 'Online', value: 'ONLINE' },
-            { label: 'Driving', value: 'DRIVING' },
-            { label: 'Blocked', value: 'BLOCKED' },
-            { label: 'Processing', value: 'PROCESSING' },
-          ]}
-          keyExtractor={(item) => item.value}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                styles.filterButton,
-                statusFilter === item.value && styles.filterButtonActive,
-              ]}
-              onPress={() => setStatusFilter(item.value as StatusFilter)}
-            >
-              <Text
-                style={[
-                  styles.filterButtonText,
-                  statusFilter === item.value && styles.filterButtonTextActive,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          )}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterButtonsContainer}
-        />
-      </View>
+      {/* Static Status Tabs */}
+      <View style={styles.statusTabsRow}>
+        {STATUS_TABS.map((tab) => {
+          const isActive = statusFilter === tab.value;
+          const isLoadingTab = filterLoading && isActive;
 
-      {/* Car Type Filters */}
-      <View style={styles.filterButtons}>
-        <FlatList
-          horizontal
-          data={[
-            { label: 'All Types', value: 'all' },
-            ...CAR_TYPES.map(type => ({
-              label: type.replace(/_/g, ' '),
-              value: type,
-            })),
-          ]}
-          keyExtractor={(item) => item.value}
-          renderItem={({ item }) => (
+          return (
             <TouchableOpacity
+              key={tab.value}
               style={[
-                styles.filterButton,
-                carTypeFilter === item.value && styles.filterButtonActive,
+                styles.statusTab,
+                isActive && { backgroundColor: tab.color, borderColor: tab.color },
               ]}
-              onPress={() => setCarTypeFilter(item.value)}
+              onPress={() => handleStatusFilterChange(tab.value)}
+              disabled={filterLoading}
+              activeOpacity={0.7}
             >
-              <Text
-                style={[
-                  styles.filterButtonText,
-                  carTypeFilter === item.value && styles.filterButtonTextActive,
-                ]}
-                numberOfLines={1}
-              >
-                {item.label}
-              </Text>
+              {isLoadingTab ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text
+                  style={[
+                    styles.statusTabText,
+                    isActive && styles.statusTabTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
+              )}
             </TouchableOpacity>
-          )}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterButtonsContainer}
-        />
+          );
+        })}
       </View>
 
       <FlatList
@@ -574,30 +554,31 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     padding: 0,
   },
-  filterButtons: {
-    marginBottom: 8,
-  },
-  filterButtonsContainer: {
+  statusTabsRow: {
+    flexDirection: 'row',
     paddingHorizontal: 20,
-    gap: 8,
+    marginBottom: 12,
+    gap: 6,
   },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+  statusTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
     backgroundColor: '#F3F4F6',
-    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    minHeight: 40,
   },
-  filterButtonActive: {
-    backgroundColor: '#3B82F6',
-  },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
+  statusTabText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#6B7280',
+    textAlign: 'center',
   },
-  filterButtonTextActive: {
-    color: 'white',
+  statusTabTextActive: {
+    color: '#FFFFFF',
   },
   listContainer: {
     paddingHorizontal: 20,

@@ -7,9 +7,10 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Clock, CircleCheck as CheckCircle, Circle as XCircle, IndianRupee, RefreshCw } from 'lucide-react-native';
+import { Clock, CircleCheck as CheckCircle, Circle as XCircle, RefreshCw } from 'lucide-react-native';
 import { apiService } from '@/services/api';
 import StatusBadge from '@/components/StatusBadge';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -60,31 +61,55 @@ export default function TransfersScreen() {
     fetchTransfers();
   };
 
+  const processTransferAction = async (
+    transfer: TransferTransaction,
+    action: 'approve' | 'reject',
+    notes?: string
+  ) => {
+    try {
+      await apiService.processTransfer(transfer.id, action, notes || undefined);
+      setTransfers((prev) => prev.filter((t) => t.id !== transfer.id));
+      Alert.alert(
+        'Success',
+        `Transfer ${action === 'approve' ? 'approved' : 'rejected'} successfully`
+      );
+    } catch (error) {
+      Alert.alert('Error', `Failed to ${action} transfer. Please try again.`);
+    }
+  };
+
   const handleTransferAction = (transfer: TransferTransaction, action: 'approve' | 'reject') => {
-    Alert.prompt(
-      `${action === 'approve' ? 'Approve' : 'Reject'} Transfer`,
-      'Add a note (optional):',
-      async (notes) => {
-        try {
-          await apiService.processTransfer(transfer.id, action, notes || undefined);
-          // Remove processed transfer from list
-          setTransfers(transfers.filter(t => t.id !== transfer.id));
-          
-          Alert.alert(
-            'Success',
-            `Transfer ${action === 'approve' ? 'approved' : 'rejected'} successfully`
-          );
-        } catch (error) {
-          Alert.alert('Error', `Failed to ${action} transfer. Please try again.`);
-        }
-      },
-      'plain-text',
-      '',
+    const title = `${action === 'approve' ? 'Approve' : 'Reject'} Transfer`;
+
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        title,
+        'Add a note (optional):',
+        async (notes) => {
+          await processTransferAction(transfer, action, notes);
+        },
+        'plain-text',
+        ''
+      );
+      return;
+    }
+
+    Alert.alert(
+      title,
+      `Are you sure you want to ${action} this transfer of ${formatCurrency(transfer.requested_amount)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: action === 'approve' ? 'Approve' : 'Reject',
+          style: action === 'reject' ? 'destructive' : 'default',
+          onPress: () => processTransferAction(transfer, action),
+        },
+      ]
     );
   };
 
   const formatCurrency = (amount: number) => {
-    return `₹${(amount).toLocaleString('en-IN')}`;
+    return `₹${amount.toLocaleString('en-IN')}`;
   };
 
   const formatDate = (dateString: string) => {
@@ -97,6 +122,8 @@ export default function TransfersScreen() {
     });
   };
 
+  const isPendingTransfer = (status: string) => status?.toLowerCase() === 'pending';
+
   const renderTransferItem = ({ item }: { item: TransferTransaction }) => (
     <View style={styles.transferCard}>
       <View style={styles.transferHeader}>
@@ -106,7 +133,7 @@ export default function TransfersScreen() {
         </View>
         <Text style={styles.requestedAmount}>{formatCurrency(item.requested_amount)}</Text>
       </View>
-      
+
       <View style={styles.balanceInfo}>
         <View style={styles.balanceItem}>
           <Text style={styles.balanceLabel}>Wallet Before</Text>
@@ -117,27 +144,27 @@ export default function TransfersScreen() {
           <Text style={styles.balanceValue}>{formatCurrency(item.bank_balance_before)}</Text>
         </View>
       </View>
-      
+
       <Text style={styles.requestDate}>Requested: {formatDate(item.created_at)}</Text>
-      
+
       {item.admin_notes && (
         <View style={styles.notesContainer}>
           <Text style={styles.notesLabel}>Admin Notes:</Text>
           <Text style={styles.notesText}>{item.admin_notes}</Text>
         </View>
       )}
-      
-      {item.status === 'Pending' && (
+
+      {isPendingTransfer(item.status) && (
         <View style={styles.actionButtons}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.actionButton, styles.approveButton]}
             onPress={() => handleTransferAction(item, 'approve')}
           >
             <CheckCircle size={16} color="white" />
             <Text style={styles.approveButtonText}>Approve</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[styles.actionButton, styles.rejectButton]}
             onPress={() => handleTransferAction(item, 'reject')}
           >
@@ -165,14 +192,14 @@ export default function TransfersScreen() {
             <Text style={styles.title}>Transfer Requests</Text>
             <Text style={styles.subtitle}>{transfers.length} pending requests</Text>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.refreshButton, refreshing && styles.refreshButtonDisabled]}
             onPress={handleManualRefresh}
             disabled={refreshing}
           >
-            <RefreshCw 
-              size={20} 
-              color={refreshing ? "#9CA3AF" : "#3B82F6"} 
+            <RefreshCw
+              size={20}
+              color={refreshing ? '#9CA3AF' : '#3B82F6'}
               style={refreshing && styles.refreshIconSpinning}
             />
           </TouchableOpacity>
@@ -184,14 +211,14 @@ export default function TransfersScreen() {
           <Clock size={48} color="#6B7280" />
           <Text style={styles.emptyTitle}>No Pending Transfers</Text>
           <Text style={styles.emptySubtitle}>All transfer requests have been processed</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.refreshEmptyButton}
             onPress={handleManualRefresh}
             disabled={refreshing}
           >
-            <RefreshCw 
-              size={16} 
-              color={refreshing ? "#9CA3AF" : "#3B82F6"} 
+            <RefreshCw
+              size={16}
+              color={refreshing ? '#9CA3AF' : '#3B82F6'}
               style={refreshing && styles.refreshIconSpinning}
             />
             <Text style={styles.refreshEmptyButtonText}>
